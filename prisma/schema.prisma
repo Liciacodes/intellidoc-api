@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -46,7 +47,7 @@ model Conversation {
 model Message {
   id             String       @id @default(uuid())
   content        String       @db.Text
-  role           String       // 'user' or 'assistant'
+  role           String
   createdAt      DateTime     @default(now())
   conversationId String
   

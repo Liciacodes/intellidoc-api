@@ -8,7 +8,7 @@
     // Environment Settings
     // See also https://aka.ms/tsconfig/module
     "module": "esnext",
-    "target": "esnext",
+    "target": "es2019",
   
     // For nodejs:
     "lib": ["esnext"],
@@ -39,9 +39,10 @@
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "skipLibCheck": true,
     "esModuleInterop": true
     
-  }
+  },
+   "exclude": ["node_modules", "dist", "prisma.config.ts"]
 }
