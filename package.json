@@ -9,12 +9,17 @@
     "build": "tsc",
     "start": "node dist/index.js"
   },
-  "type": "module",
+ 
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Liciacodes/intellidoc-api.git"
   },
-  "keywords": ["api", "express", "typescript", "ai"],
+  "keywords": [
+    "api",
+    "express",
+    "typescript",
+    "ai"
+  ],
   "author": "Felicia Udosen",
   "license": "MIT",
   "bugs": {
@@ -23,6 +28,7 @@
   "homepage": "https://github.com/Liciacodes/intellidoc-api#readme",
   "dependencies": {
     "@prisma/client": "^6.18.0",
+    "@supabase/supabase-js": "^2.81.1",
     "bcryptjs": "^3.0.2",
     "cloudinary": "^2.8.0",
     "cors": "^2.8.5",
