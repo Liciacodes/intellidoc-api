@@ -9,47 +9,44 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  documents Document[]
+  id            String         @id @default(uuid())
+  email         String         @unique
+  password      String
+  name          String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   conversations Conversation[]
+  documents     Document[]
 }
 
 model Document {
-  id          String   @id @default(uuid())
-  title       String
-  fileUrl     String
-  fileType    String
-  textContent String   @db.Text
-  uploadedAt  DateTime @default(now())
-  userId      String
-  
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String         @id @default(uuid())
+  title         String
+  fileUrl       String
+  fileType      String
+  textContent   String
+  size          Int?
+  uploadedAt    DateTime       @default(now())
+  userId        String?
   conversations Conversation[]
+  user          User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Conversation {
-  id         String   @id @default(uuid())
-  createdAt  DateTime @default(now())
+  id         String    @id @default(uuid())
+  createdAt  DateTime  @default(now())
   userId     String
   documentId String
-  
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  document Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  messages Message[]
+  document   Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages   Message[]
 }
 
 model Message {
   id             String       @id @default(uuid())
-  content        String       @db.Text
+  content        String
   role           String
   createdAt      DateTime     @default(now())
   conversationId String
-  
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 }
