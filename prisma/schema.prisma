@@ -13,6 +13,8 @@ model User {
   email         String         @unique
   password      String
   name          String?
+  resetToken    String?
+  resetTokenExpiry  DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   conversations Conversation[]

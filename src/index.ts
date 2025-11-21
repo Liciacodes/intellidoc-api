@@ -1,12 +1,13 @@
 import dotenv from "dotenv";
-import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
+import crypto from 'crypto'
+import bcrypt from "bcryptjs";
+import nodemailer from 'nodemailer'
+import jwt from "jsonwebtoken";
 import express, { type Request, type Response } from "express";
 import cors from "cors";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import multer from "multer";
-
 
 dotenv.config();
 
@@ -29,12 +30,18 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const JWT_SECRET = process.env.JWT_SECRET
+const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  throw new Error('Missing JWT_SECRET environment variable');
+  throw new Error("Missing JWT_SECRET environment variable");
 }
 
-
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_APP_USER,
+    pass: process.env.GMAIL_APP_PASS
+  }
+})
 
 app.get("/api-health", (req, res) => {
   res.json({ status: "ok", message: "Intellidoc API is running" });
@@ -44,48 +51,143 @@ interface UploadDocumentRequest {
   title: string;
 }
 
-app.post('/api/auth/register', async(req: Request, res: Response) => {
-    const {email, password} = req.body
-    if (!email || !password ) return res.status(400).json({error: 'Email and Password required'})
+app.post("/api/auth/register", async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+  if (!email || !password)
+    return res.status(400).json({ error: "Email and Password required" });
 
-        const existingUser = await prisma.user.findUnique({where: {email}})
-        if (existingUser) return res.status(409).json({error: 'User already exists'})
+  const existingUser = await prisma.user.findUnique({ where: { email } });
+  if (existingUser)
+    return res.status(409).json({ error: "User already exists" });
 
-            const hashedPassword = await bcrypt.hash(password, 10)
+  const hashedPassword = await bcrypt.hash(password, 10);
 
-            const user = await prisma.user.create({
-                data: {
-                   email,
-                   password: hashedPassword 
-                }
-            })
+  const user = await prisma.user.create({
+    data: {
+      email,
+      password: hashedPassword,
+    },
+  });
 
-            return res.status(201).json({message: 'User registered successfully', userId: user.id})
+  return res
+    .status(201)
+    .json({ message: "User registered successfully", userId: user.id });
+});
 
-})
 
-app.post('/api/auth/login', async(req: Request, res: Response) => {
-    const {email, password} = req.body;
+app.post("/api/auth/login", async (req: Request, res: Response) => {
+  const { email, password } = req.body;
 
-    if(!email || !password) return res.status(400).json({error: 'Email and password not found'})
-    const user = await prisma.user.findUnique({ where: {email}})
+  if (!email || !password)
+    return res.status(400).json({ error: "Email and password not found" });
+  const user = await prisma.user.findUnique({ where: { email } });
 
-    if (!user) return res.status(401).json({
-        error: 'Invalid Credentials'
+  if (!user)
+    return res.status(401).json({
+      error: "Invalid Credentials",
+    });
+
+  const validPassword = await bcrypt.compare(password, user.password);
+
+  if (!validPassword)
+    return res.status(401).json({
+      error: "Invalid Credentials",
+    });
+
+  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: "1h" });
+  res.json({ token });
+});
+
+app.post('/api/auth/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    console.log('Forgot password request for:', email);
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    
+    // Always return success to prevent email enumeration
+    if (!user) {
+      
+      return res.json({ 
+        message: 'If this email exists in our system, a password reset link has been sent.' 
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = new Date(Date.now() + 1000 * 60 * 15); // 15 minutes
+
+    // Update user with reset token
+    await prisma.user.update({
+      where: { email },
+      data: {
+        resetToken,
+        resetTokenExpiry
+      }
+    });
+
+const resetUrl = `http://localhost:5173/reset-password?token=${resetToken}`
+    // For development, log the reset link
+
+    await transporter.sendMail({
+      from: `'Intellidoc Support' <${process.env.GMAIL_USER}`,
+      to: email,
+      subject: 'Password Reset Request',
+      text: `You requested a password reset. Use this link to reset your password:\n\n${resetUrl}\n\nThis link expires in 15 minutes.`,
+        html: `<p>You requested a password reset. Click the link below to reset your password:</p>
+             <a href="${resetUrl}">${resetUrl}</a>
+             <p>This link expires in 15 minutes.</p>`
     })
 
-    const validPassword = await bcrypt.compare(password, user.password )
 
-    if (!validPassword) return res.status(401).json({
-        error: 'Invalid Credentials'
+
+    return res.json({
+      message: 'If this email exists in our system, a password reset link has been sent.'
+    });
+
+  } catch (error: any) {
+    console.error('Forgot password error:', error);
+    return res.status(500).json({ 
+      error: 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+app.post('/api/auth/reset-password', async(req: Request, res: Response) => {
+  const token = req.query.token as string
+  const { newPassword} = req.body;
+
+    if (!token || !newPassword)
+    return res.status(400).json({ error: "Token and new password required" });
+
+    const user = await prisma.user.findFirst({
+      where: {
+       resetToken: token,
+       resetTokenExpiry: {gt: new Date()}
+      },
     })
 
-    const token = jwt.sign({userId: user.id}, JWT_SECRET, {expiresIn: '1h'})
-    res.json({token})
+    if (!user) return res.status(400).json({ error: 'Invalid or expired token'})
+
+      const hashed = await bcrypt.hash(newPassword, 10)
+
+      await prisma.user.update({
+        where: {id: user.id},
+        data: {
+          password: hashed,
+          resetToken: null,
+          resetTokenExpiry: null
+        }
+      })
+
+      return res.json({ message: 'Password reset successful' });
 })
-
-
-
 
 app.get("/api/documents", async (req: Request, res: Response) => {
   try {
@@ -103,6 +205,7 @@ app.get("/api/documents", async (req: Request, res: Response) => {
   }
 });
 
+
 app.get("/api/documents/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -119,6 +222,7 @@ app.get("/api/documents/:id", async (req: Request, res: Response) => {
     res.status(500).json({ error: "Error fetching document" });
   }
 });
+
 
 app.post(
   "/api/documents/uploads",
