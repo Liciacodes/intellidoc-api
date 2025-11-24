@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
-
+import { geminiService } from "../services/geminiService";
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -17,13 +17,24 @@ interface UploadDocumentRequest {
   title: string;
 }
 
+// Helper function to ensure size is never null
+const ensureDocumentSize = (doc: any) => ({
+  ...doc,
+  size: doc.size || 0
+});
+
 router.get("/", async (req, res) => {
   try {
     const documents = await prisma.document.findMany({
       orderBy: { uploadedAt: "desc" },
     });
 
-    res.json(documents);
+    const documentsWithSize = documents.map(doc => ({
+      ...doc,
+      size: doc.size || 0 // This ensures size is always a number
+    }));
+
+    res.json(documentsWithSize);
   } catch (error: any) {
     console.error("Error fetching documents:", error);
     res.status(500).json({
@@ -43,12 +54,69 @@ router.get("/:id", async (req, res) => {
     if (!document) {
       return res.status(404).json({ error: "Document not found" });
     }
-    res.json(document);
+    
+    // Apply the same fix here
+    res.json(ensureDocumentSize(document));
   } catch (error: any) {
     console.error("Get document error:", error);
     res.status(500).json({ error: "Error fetching document" });
   }
 });
+
+// Get document content
+router.get("/:id/content", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const document = await prisma.document.findUnique({
+      where: { id: id as string },
+    });
+
+    if (!document) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    // Return text content or placeholder
+    res.json({
+      text: document.textContent || `# ${document.title}\n\nDocument content will be displayed here.\n\nThis document was uploaded on ${new Date(document.uploadedAt).toLocaleDateString()} and is ${document.fileType} type.`,
+      title: document.title,
+      fileType: document.fileType
+    });
+  } catch (error: any) {
+    console.error("Get document content error:", error);
+    res.status(500).json({ error: "Error fetching document content" });
+  }
+});
+
+// Generate AI summary
+router.post("/:id/summarize", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+
+    const document = await prisma.document.findUnique({
+      where: { id: id as string },
+    });
+
+    if (!document) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const text = content || document.textContent || "";
+
+    const summary = await geminiService.summarizeText(text);
+
+    res.json({
+      summary,
+      documentId: id
+    });
+
+  } catch (error: any) {
+    console.error("Summarization error:", error);
+    res.status(500).json({ error: "Error generating summary" });
+  }
+});
+
+
 
 router.post(
   "/uploads",
@@ -124,7 +192,7 @@ router.post(
         fileUrl: savedDoc.fileUrl,
         fileType: savedDoc.fileType,
         uploadedAt: savedDoc.uploadedAt,
-        size: savedDoc.size,
+        size: savedDoc.size || 0, // Apply the fix here too
       });
     } catch (error: any) {
       console.error("Upload error:", error);

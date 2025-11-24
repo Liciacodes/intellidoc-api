@@ -27,7 +27,7 @@ model Document {
   fileUrl       String
   fileType      String
   textContent   String
-  size          Int?
+  size          Int?            @default(0) 
   uploadedAt    DateTime       @default(now())
   userId        String?
   conversations Conversation[]
