@@ -4,6 +4,9 @@ import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import { geminiService } from "../services/geminiService";
 
+
+const pdfParse: any = require('pdf-parse');
+
 const router = Router();
 const prisma = new PrismaClient();
 const supabase = createClient(
@@ -13,9 +16,20 @@ const supabase = createClient(
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-interface UploadDocumentRequest {
-  title: string;
-}
+// Text extraction functions
+const extractTextFromPDF = async (buffer: Buffer): Promise<string> => {
+  try {
+    const data = await pdfParse(buffer);
+    return data.text;
+  } catch (error) {
+    console.error('PDF text extraction error:', error);
+    return '';
+  }
+};
+
+const extractTextFromTextFile = (buffer: Buffer): string => {
+  return buffer.toString('utf8');
+};
 
 // Helper function to ensure size is never null
 const ensureDocumentSize = (doc: any) => ({
@@ -23,101 +37,7 @@ const ensureDocumentSize = (doc: any) => ({
   size: doc.size || 0
 });
 
-router.get("/", async (req, res) => {
-  try {
-    const documents = await prisma.document.findMany({
-      orderBy: { uploadedAt: "desc" },
-    });
-
-    const documentsWithSize = documents.map(doc => ({
-      ...doc,
-      size: doc.size || 0 // This ensures size is always a number
-    }));
-
-    res.json(documentsWithSize);
-  } catch (error: any) {
-    console.error("Error fetching documents:", error);
-    res.status(500).json({
-      error: "Error fetching documents",
-      details: error.message,
-    });
-  }
-});
-
-router.get("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const document = await prisma.document.findUnique({
-      where: { id: id as string },
-    });
-
-    if (!document) {
-      return res.status(404).json({ error: "Document not found" });
-    }
-    
-    // Apply the same fix here
-    res.json(ensureDocumentSize(document));
-  } catch (error: any) {
-    console.error("Get document error:", error);
-    res.status(500).json({ error: "Error fetching document" });
-  }
-});
-
-// Get document content
-router.get("/:id/content", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const document = await prisma.document.findUnique({
-      where: { id: id as string },
-    });
-
-    if (!document) {
-      return res.status(404).json({ error: "Document not found" });
-    }
-
-    // Return text content or placeholder
-    res.json({
-      text: document.textContent || `# ${document.title}\n\nDocument content will be displayed here.\n\nThis document was uploaded on ${new Date(document.uploadedAt).toLocaleDateString()} and is ${document.fileType} type.`,
-      title: document.title,
-      fileType: document.fileType
-    });
-  } catch (error: any) {
-    console.error("Get document content error:", error);
-    res.status(500).json({ error: "Error fetching document content" });
-  }
-});
-
-// Generate AI summary
-router.post("/:id/summarize", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { content } = req.body;
-
-    const document = await prisma.document.findUnique({
-      where: { id: id as string },
-    });
-
-    if (!document) {
-      return res.status(404).json({ error: "Document not found" });
-    }
-
-    const text = content || document.textContent || "";
-
-    const summary = await geminiService.summarizeText(text);
-
-    res.json({
-      summary,
-      documentId: id
-    });
-
-  } catch (error: any) {
-    console.error("Summarization error:", error);
-    res.status(500).json({ error: "Error generating summary" });
-  }
-});
-
-
-
+// Upload document route
 router.post(
   "/uploads",
   upload.single("file"),
@@ -142,6 +62,27 @@ router.post(
       }
       if (!title) {
         return res.status(400).json({ error: "Missing title" });
+      }
+
+      // Extract text content based on file type
+      let textContent = '';
+      try {
+        if (file.mimetype === 'application/pdf') {
+          textContent = await extractTextFromPDF(file.buffer);
+        } else if (file.mimetype.includes('text/') || 
+                   file.mimetype === 'application/json' || 
+                   file.mimetype.includes('document')) {
+          textContent = extractTextFromTextFile(file.buffer);
+        }
+        
+        console.log(`Text extraction: ${textContent.length} characters extracted`);
+        
+        if (textContent.length === 0) {
+          console.warn('No text content could be extracted from the file');
+        }
+      } catch (extractionError) {
+        console.error('Text extraction failed:', extractionError);
+        // Continue without text content
       }
 
       const filePath = `documents/${Date.now()}_${file.originalname}`;
@@ -170,12 +111,12 @@ router.post(
 
       console.log("File uploaded to Supabase, URL:", publicUrlData.publicUrl);
 
-      // Create document data without userId
+      // Create document data with extracted text content
       const documentData: any = {
         title: title || file.originalname,
         fileUrl: publicUrlData.publicUrl,
         fileType: file.mimetype,
-        textContent: "",
+        textContent: textContent,
         size: file.size,
       };
 
@@ -184,7 +125,11 @@ router.post(
         data: documentData,
       });
 
-      console.log("Document saved to database successfully:", savedDoc.id);
+      console.log("Document saved to database successfully:", {
+        id: savedDoc.id,
+        title: savedDoc.title,
+        textContentLength: savedDoc.textContent?.length || 0
+      });
 
       res.json({
         id: savedDoc.id,
@@ -192,7 +137,8 @@ router.post(
         fileUrl: savedDoc.fileUrl,
         fileType: savedDoc.fileType,
         uploadedAt: savedDoc.uploadedAt,
-        size: savedDoc.size || 0, // Apply the fix here too
+        size: savedDoc.size || 0,
+        hasTextContent: !!savedDoc.textContent && savedDoc.textContent.length > 0
       });
     } catch (error: any) {
       console.error("Upload error:", error);
@@ -203,6 +149,134 @@ router.post(
     }
   }
 );
+
+// Add the test route to verify Gemini API
+router.post("/test-gemini", async (req, res) => {
+  try {
+    const testText = "This is a test document content. Artificial intelligence is transforming how we work and live. Machine learning algorithms can now understand and process natural language with remarkable accuracy. This technology has applications in healthcare, education, business, and many other fields.";
+    
+    const summary = await geminiService.summarizeText(testText);
+    
+    res.json({
+      success: true,
+      summary: summary,
+      message: "Gemini API is working correctly"
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: "Gemini API test failed"
+    });
+  }
+});
+
+// Keep your other routes (GET, DELETE, etc.) the same as before
+router.get("/", async (req, res) => {
+  try {
+    const documents = await prisma.document.findMany({
+      orderBy: { uploadedAt: "desc" },
+    });
+
+    const documentsWithSize = documents.map(doc => ({
+      ...doc,
+      size: doc.size || 0
+    }));
+
+    res.json(documentsWithSize);
+  } catch (error: any) {
+    console.error("Error fetching documents:", error);
+    res.status(500).json({
+      error: "Error fetching documents",
+      details: error.message,
+    });
+  }
+});
+
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const document = await prisma.document.findUnique({
+      where: { id: id as string },
+    });
+
+    if (!document) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+    
+    res.json(ensureDocumentSize(document));
+  } catch (error: any) {
+    console.error("Get document error:", error);
+    res.status(500).json({ error: "Error fetching document" });
+  }
+});
+
+// Get document content
+router.get("/:id/content", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const document = await prisma.document.findUnique({
+      where: { id: id as string },
+    });
+
+    if (!document) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    // Return text content or placeholder
+    res.json({
+      text: document.textContent || `# ${document.title}\n\nDocument content will be displayed here.\n\nThis document was uploaded on ${new Date(document.uploadedAt).toLocaleDateString()} and is ${document.fileType} type.`,
+      title: document.title,
+      fileType: document.fileType,
+      hasContent: !!document.textContent && document.textContent.length > 0
+    });
+  } catch (error: any) {
+    console.error("Get document content error:", error);
+    res.status(500).json({ error: "Error fetching document content" });
+  }
+});
+
+// Generate AI summary
+router.post("/:id/summarize", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+
+    const document = await prisma.document.findUnique({
+      where: { id: id as string },
+    });
+
+    if (!document) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    // Use provided content or fall back to stored text content
+    const text = content || document.textContent || "";
+
+    if (!text || text.trim().length < 50) {
+      return res.status(400).json({ 
+        error: "Document doesn't have enough text content for summarization. Please upload a document with readable text." 
+      });
+    }
+
+    console.log(`Generating summary for document ${id}, text length: ${text.length}`);
+
+    const summary = await geminiService.summarizeText(text);
+
+    res.json({
+      summary,
+      documentId: id,
+      success: true
+    });
+
+  } catch (error: any) {
+    console.error("Summarization error:", error);
+    res.status(500).json({ 
+      error: "Error generating summary",
+      details: error.message 
+    });
+  }
+});
 
 router.delete("/:id", async (req, res) => {
   try {
