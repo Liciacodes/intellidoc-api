@@ -142,7 +142,7 @@ router.post(
 
       const filePath = `documents/${Date.now()}_${file.originalname}`;
 
-      console.log("☁️ Uploading to Supabase storage...");
+      console.log("Uploading to Supabase storage...");
 
       // Upload file buffer to Supabase Storage
       const { data, error: uploadError } = await supabase.storage
@@ -164,7 +164,7 @@ router.post(
         .from("documents")
         .getPublicUrl(filePath);
 
-      console.log("✅ File uploaded to Supabase, URL:", publicUrlData.publicUrl);
+      console.log("File uploaded to Supabase, URL:", publicUrlData.publicUrl);
 
       // Create document data - ALWAYS save the text content
       const documentData: any = {
@@ -182,7 +182,7 @@ router.post(
         data: documentData,
       });
 
-      console.log("✅ Document saved to database:", {
+      console.log("Document saved to database:", {
         id: savedDoc.id,
         title: savedDoc.title,
         textContentLength: savedDoc.textContent?.length || 0,
@@ -212,8 +212,7 @@ router.post(
   }
 );
 
-// Test PDF extraction route
-// Add this route to test pdfreader
+
 router.post("/test-pdfreader", upload.single("file"), async (req, res) => {
   const file = req.file;
   
@@ -280,7 +279,7 @@ router.post("/test-pdf-extraction", upload.single("file"), async (req, res) => {
   }
 });
 
-// Generate AI summary - IMPROVED
+
 router.post("/:id/summarize", async (req, res) => {
   try {
     const { id } = req.params;
@@ -339,10 +338,69 @@ router.post("/:id/summarize", async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error("❌ Summarization error:", error);
+    console.error("Summarization error:", error);
     res.status(500).json({ 
       error: "Error generating summary",
       details: error.message 
+    });
+  }
+});
+
+// Q&A with Document - Add this route AFTER the summarize route
+router.post("/:id/ask", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { question } = req.body;
+
+    console.log(`Q&A request for document ${id}:`, { question });
+
+    // Validation
+    if (!question || question.trim().length < 3) {
+      return res.status(400).json({ 
+        error: "Please ask a meaningful question (at least 3 characters)" 
+      });
+    }
+
+    const document = await prisma.document.findUnique({
+      where: { id: id as string },
+    });
+
+    if (!document) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const text = document.textContent || "";
+
+    if (!text || text.length < 50) {
+      return res.status(400).json({ 
+        error: "This document doesn't have enough text to answer questions",
+        textLength: text.length,
+        solution: "Please upload a document with readable text content"
+      });
+    }
+
+    console.log(`📄 Document found: ${text.length} characters`);
+
+    // Call Gemini for answer
+    const answer = await geminiService.askQuestion(text, question.trim());
+
+    console.log(`Answer generated: ${answer.length} characters`);
+
+    res.json({
+      success: true,
+      answer,
+      question: question.trim(),
+      documentId: id,
+      documentTitle: document.title,
+      textLength: text.length
+    });
+
+  } catch (error: any) {
+    console.error("Q&A error:", error);
+    res.status(500).json({ 
+      error: "Failed to answer question",
+      details: error.message,
+      help: "Check your Gemini API key and internet connection"
     });
   }
 });
