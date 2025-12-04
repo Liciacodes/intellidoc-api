@@ -405,6 +405,31 @@ router.post("/:id/ask", async (req, res) => {
   }
 });
 
+router.post("/:id/key-points", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const document = await prisma.document.findUnique({ where: { id } });
+    
+    if (!document) return res.status(404).json({ error: "Document not found" });
+    
+    const text = document.textContent || "";
+    if (!text || text.length < 50) {
+      return res.status(400).json({ error: "Not enough text content" });
+    }
+    
+    const keyPoints = await geminiService.extractKeyPoints(text);
+    
+    res.json({
+      success: true,
+      keyPoints,
+      documentId: id,
+      count: keyPoints.length
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Manual content submission route
 router.post("/:id/manual-content", async (req, res) => {
   try {
