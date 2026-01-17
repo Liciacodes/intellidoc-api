@@ -3,6 +3,7 @@ import multer from "multer";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import { geminiService } from "../services/geminiService";
+import { requireAuth } from "middleware/Auth";
 
 const mammoth = require('mammoth');
 
@@ -476,7 +477,7 @@ router.post("/:id/manual-content", async (req, res) => {
 });
 
 // Get all documents
-router.get("/", async (req, res) => {
+router.get("/", requireAuth, async (req, res) => {
   try {
     const documents = await prisma.document.findMany({
       orderBy: { uploadedAt: "desc" },
