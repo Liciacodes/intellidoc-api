@@ -3,7 +3,7 @@ import multer from "multer";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import { geminiService } from "../services/geminiService";
-import { requireAuth } from "middleware/Auth";
+import { requireAuth } from "../middleware/Auth";
 
 const mammoth = require('mammoth');
 
@@ -76,14 +76,19 @@ const ensureDocumentSize = (doc: any) => ({
 
 
 router.post(
-  "/uploads",
+  "/uploads", requireAuth,
   upload.single("file"),
   async (req, res) => {
     try {
       const { title } = req.body;
       const file = req.file;
+      const userId = (req as any).userId;
 
-      console.log("📤 Upload request received:", {
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      console.log("Upload request received:", {
         title: title,
         file: file ? {
           originalname: file.originalname,
@@ -167,13 +172,14 @@ router.post(
 
       console.log("File uploaded to Supabase, URL:", publicUrlData.publicUrl);
 
-      // Create document data - ALWAYS save the text content
+      // Create document data 
       const documentData: any = {
         title: title || file.originalname,
         fileUrl: publicUrlData.publicUrl,
         fileType: file.mimetype,
         size: file.size,
-        textContent: textContent, // Save ALL extracted text, even if short
+        textContent: textContent, 
+       userId: userId
       };
 
       console.log("💾 Saving to database with textContent length:", textContent.length);
@@ -281,38 +287,98 @@ router.post("/test-pdf-extraction", upload.single("file"), async (req, res) => {
 });
 
 
+// router.post("/:id/summarize", async (req, res) => {
+//   try {
+//     const { id } = req.params;
+
+//     console.log(`Summarization request for document: ${id}`);
+
+//     const document = await prisma.document.findUnique({
+//       where: { id: id as string },
+//     });
+
+//     if (!document) {
+//       return res.status(404).json({ error: "Document not found" });
+//     }
+
+//     console.log(` Document found:`, {
+//       title: document.title,
+//       fileType: document.fileType,
+//       textContentLength: document.textContent?.length || 0
+//     });
+
+//     // Get the text content
+//     const text = document.textContent || "";
+
+//     console.log(` Text to summarize: ${text.length} characters`);
+    
+//     if (text.length > 0) {
+//       console.log(`Text preview: ${text.substring(0, 300)}...`);
+//     }
+
+//     // Check if we have enough text to summarize
+//     if (!text || text.trim().length < 50) {
+//       console.error(`Insufficient text for summarization: ${text.length} characters`);
+      
+//       return res.status(400).json({ 
+//         error: "Cannot summarize: No text content available",
+//         details: {
+//           documentTitle: document.title,
+//           fileType: document.fileType,
+//           textLength: text.length,
+//           message: "The PDF appears to be scanned or text extraction failed. Try uploading as .docx instead."
+//         }
+//       });
+//     }
+
+//     console.log('Sufficient text found, generating summary...');
+
+//     const summary = await geminiService.summarizeText(text);
+
+//     console.log(' Summary generated successfully');
+
+//     res.json({
+//       summary,
+//       documentId: id,
+//       textLength: text.length,
+//       success: true
+//     });
+
+//   } catch (error: any) {
+//     console.error("Summarization error:", error);
+//     res.status(500).json({ 
+//       error: "Error generating summary",
+//       details: error.message 
+//     });
+//   }
+// });
+
+
 router.post("/:id/summarize", async (req, res) => {
   try {
     const { id } = req.params;
 
-    console.log(`Summarization request for document: ${id}`);
+    console.log(`📊 Summarization request for document: ${id}`);
 
     const document = await prisma.document.findUnique({
       where: { id: id as string },
     });
 
     if (!document) {
+      console.error(`❌ Document ${id} not found`);
       return res.status(404).json({ error: "Document not found" });
     }
 
-    console.log(` Document found:`, {
+    console.log(`✅ Document found:`, {
       title: document.title,
       fileType: document.fileType,
       textContentLength: document.textContent?.length || 0
     });
 
-    // Get the text content
     const text = document.textContent || "";
 
-    console.log(` Text to summarize: ${text.length} characters`);
-    
-    if (text.length > 0) {
-      console.log(`Text preview: ${text.substring(0, 300)}...`);
-    }
-
-    // Check if we have enough text to summarize
     if (!text || text.trim().length < 50) {
-      console.error(`Insufficient text for summarization: ${text.length} characters`);
+      console.error(`❌ Insufficient text: ${text.length} characters`);
       
       return res.status(400).json({ 
         error: "Cannot summarize: No text content available",
@@ -320,16 +386,50 @@ router.post("/:id/summarize", async (req, res) => {
           documentTitle: document.title,
           fileType: document.fileType,
           textLength: text.length,
-          message: "The PDF appears to be scanned or text extraction failed. Try uploading as .docx instead."
+          message: "The document has no extractable text. This could be a scanned PDF or text extraction failed."
         }
       });
     }
 
-    console.log('Sufficient text found, generating summary...');
+    console.log(`✅ Text ready for summarization: ${text.length} chars`);
+    console.log(`📝 Preview: ${text.substring(0, 200)}...`);
 
-    const summary = await geminiService.summarizeText(text);
-
-    console.log(' Summary generated successfully');
+    // Try to generate summary with detailed error catching
+    let summary;
+    try {
+      summary = await geminiService.summarizeText(text);
+      console.log(`✅ Summary generated successfully: ${summary.length} chars`);
+    } catch (geminiError: any) {
+      console.error('❌ GEMINI API ERROR:', {
+        message: geminiError.message,
+        stack: geminiError.stack,
+        name: geminiError.name
+      });
+      
+      // Check for specific Gemini errors
+      if (geminiError.message?.includes('API key')) {
+        return res.status(500).json({
+          error: "Gemini API key is missing or invalid",
+          details: "Check your GOOGLE_GEMINI_API_KEY environment variable",
+          geminiError: geminiError.message
+        });
+      }
+      
+      if (geminiError.message?.includes('quota') || geminiError.message?.includes('rate limit')) {
+        return res.status(429).json({
+          error: "Gemini API rate limit exceeded",
+          details: "Please wait a moment and try again",
+          geminiError: geminiError.message
+        });
+      }
+      
+      // Generic Gemini error
+      return res.status(500).json({
+        error: "Gemini API error",
+        details: geminiError.message,
+        help: "Check your API key and internet connection"
+      });
+    }
 
     res.json({
       summary,
@@ -339,21 +439,162 @@ router.post("/:id/summarize", async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error("Summarization error:", error);
+    console.error("❌ SUMMARIZATION ERROR:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    
     res.status(500).json({ 
       error: "Error generating summary",
-      details: error.message 
+      details: error.message,
+      type: error.name || 'Unknown error'
     });
   }
 });
 
+
 // Q&A with Document - Add this route AFTER the summarize route
+// router.post("/:id/ask", async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { question } = req.body;
+
+//     console.log(`Q&A request for document ${id}:`, { question });
+
+//     // Validation
+//     if (!question || question.trim().length < 3) {
+//       return res.status(400).json({ 
+//         error: "Please ask a meaningful question (at least 3 characters)" 
+//       });
+//     }
+
+//     const document = await prisma.document.findUnique({
+//       where: { id: id as string },
+//     });
+
+//     if (!document) {
+//       return res.status(404).json({ error: "Document not found" });
+//     }
+
+//     const text = document.textContent || "";
+
+//     if (!text || text.length < 50) {
+//       return res.status(400).json({ 
+//         error: "This document doesn't have enough text to answer questions",
+//         textLength: text.length,
+//         solution: "Please upload a document with readable text content"
+//       });
+//     }
+
+//     console.log(`📄 Document found: ${text.length} characters`);
+
+//     // Call Gemini for answer
+//     const answer = await geminiService.askQuestion(text, question.trim());
+
+//     console.log(`Answer generated: ${answer.length} characters`);
+
+//     res.json({
+//       success: true,
+//       answer,
+//       question: question.trim(),
+//       documentId: id,
+//       documentTitle: document.title,
+//       textLength: text.length
+//     });
+
+//   } catch (error: any) {
+//     console.error("Q&A error:", error);
+//     res.status(500).json({ 
+//       error: "Failed to answer question",
+//       details: error.message,
+//       help: "Check your Gemini API key and internet connection"
+//     });
+//   }
+// });
+
+// router.post("/:id/key-points", async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const document = await prisma.document.findUnique({ where: { id } });
+    
+//     if (!document) return res.status(404).json({ error: "Document not found" });
+    
+//     const text = document.textContent || "";
+//     if (!text || text.length < 50) {
+//       return res.status(400).json({ error: "Not enough text content" });
+//     }
+    
+//     const keyPoints = await geminiService.extractKeyPoints(text);
+    
+//     res.json({
+//       success: true,
+//       keyPoints,
+//       documentId: id,
+//       count: keyPoints.length
+//     });
+//   } catch (error: any) {
+//     res.status(500).json({ error: error.message });
+//   }
+// });
+
+// // Manual content submission route
+// router.post("/:id/manual-content", async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { content } = req.body;
+
+//     if (!content || content.trim().length < 10) {
+//       return res.status(400).json({ 
+//         error: "Please provide meaningful text content (at least 10 characters)" 
+//       });
+//     }
+
+//     const document = await prisma.document.findUnique({
+//       where: { id: id as string },
+//     });
+
+//     if (!document) {
+//       return res.status(404).json({ error: "Document not found" });
+//     }
+
+//     // Update the document with manually provided content
+//     await prisma.document.update({
+//       where: { id: id as string },
+//       data: { textContent: content.trim() }
+//     });
+
+//     console.log(`📝 Manual content submitted for document ${id}, length: ${content.length}`);
+
+//     res.json({
+//       success: true,
+//       message: "Content submitted successfully! You can now generate a summary.",
+//       textLength: content.length,
+//       canSummarize: true,
+//       documentId: id
+//     });
+
+//   } catch (error: any) {
+//     console.error("Content submission error:", error);
+//     res.status(500).json({ 
+//       error: "Error submitting content",
+//       details: error.message 
+//     });
+//   }
+// });
+
+
+
+// FIXED Q&A AND KEY POINTS ROUTES
+// Replace these routes in your documents.ts file
+
+// Q&A Route - FIXED VERSION
 router.post("/:id/ask", async (req, res) => {
   try {
     const { id } = req.params;
     const { question } = req.body;
 
-    console.log(`Q&A request for document ${id}:`, { question });
+    console.log(`❓ Q&A request for document ${id}:`, { question });
 
     // Validation
     if (!question || question.trim().length < 3) {
@@ -362,14 +603,18 @@ router.post("/:id/ask", async (req, res) => {
       });
     }
 
+    // Find document
     const document = await prisma.document.findUnique({
       where: { id: id as string },
     });
 
     if (!document) {
-      return res.status(404).json({ error: "Document not found" });
+      return res.status(404).json({ 
+        error: "Document not found" 
+      });
     }
 
+    // Check text content
     const text = document.textContent || "";
 
     if (!text || text.length < 50) {
@@ -380,16 +625,28 @@ router.post("/:id/ask", async (req, res) => {
       });
     }
 
-    console.log(`📄 Document found: ${text.length} characters`);
+    console.log(`📄 Document has ${text.length} characters`);
 
-    // Call Gemini for answer
-    const answer = await geminiService.askQuestion(text, question.trim());
+    // Generate answer
+    let answer;
+    try {
+      answer = await geminiService.askQuestion(text, question.trim());
+      console.log(`✅ Answer generated: ${answer.length} characters`);
+    } catch (aiError: any) {
+      console.error('❌ AI ERROR:', aiError);
+      
+      // Return error with proper status code
+      return res.status(500).json({
+        error: "Failed to generate answer",
+        details: aiError.message || "AI service error",
+        help: "Please try again in a moment"
+      });
+    }
 
-    console.log(`Answer generated: ${answer.length} characters`);
-
-    res.json({
+    // Success response
+    return res.status(200).json({
       success: true,
-      answer,
+      answer: answer,
       question: question.trim(),
       documentId: id,
       documentTitle: document.title,
@@ -397,89 +654,91 @@ router.post("/:id/ask", async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error("Q&A error:", error);
-    res.status(500).json({ 
+    console.error("❌ Q&A ERROR:", error);
+    return res.status(500).json({ 
       error: "Failed to answer question",
-      details: error.message,
-      help: "Check your Gemini API key and internet connection"
+      details: error.message || "Unknown error",
+      type: error.name || 'Error'
     });
   }
 });
 
+// KEY POINTS Route - FIXED VERSION
 router.post("/:id/key-points", async (req, res) => {
   try {
     const { id } = req.params;
-    const document = await prisma.document.findUnique({ where: { id } });
     
-    if (!document) return res.status(404).json({ error: "Document not found" });
+    console.log(`🔑 Key points request for document: ${id}`);
     
-    const text = document.textContent || "";
-    if (!text || text.length < 50) {
-      return res.status(400).json({ error: "Not enough text content" });
-    }
-    
-    const keyPoints = await geminiService.extractKeyPoints(text);
-    
-    res.json({
-      success: true,
-      keyPoints,
-      documentId: id,
-      count: keyPoints.length
+    // Find document
+    const document = await prisma.document.findUnique({ 
+      where: { id: id as string } 
     });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Manual content submission route
-router.post("/:id/manual-content", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { content } = req.body;
-
-    if (!content || content.trim().length < 10) {
-      return res.status(400).json({ 
-        error: "Please provide meaningful text content (at least 10 characters)" 
+    
+    if (!document) {
+      return res.status(404).json({ 
+        error: "Document not found" 
       });
     }
-
-    const document = await prisma.document.findUnique({
-      where: { id: id as string },
-    });
-
-    if (!document) {
-      return res.status(404).json({ error: "Document not found" });
+    
+    // Check text content
+    const text = document.textContent || "";
+    
+    if (!text || text.length < 50) {
+      return res.status(400).json({ 
+        error: "Not enough text content",
+        textLength: text.length,
+        solution: "Please upload a document with readable text"
+      });
     }
-
-    // Update the document with manually provided content
-    await prisma.document.update({
-      where: { id: id as string },
-      data: { textContent: content.trim() }
-    });
-
-    console.log(`📝 Manual content submitted for document ${id}, length: ${content.length}`);
-
-    res.json({
+    
+    console.log(`📄 Extracting key points from ${text.length} chars`);
+    
+    // Generate key points
+    let keyPoints;
+    try {
+      keyPoints = await geminiService.extractKeyPoints(text);
+      console.log(`✅ Extracted ${keyPoints.length} key points`);
+    } catch (aiError: any) {
+      console.error('❌ AI ERROR:', aiError);
+      
+      // Return error with proper status code
+      return res.status(500).json({
+        error: "Failed to extract key points",
+        details: aiError.message || "AI service error",
+        help: "Please try again in a moment"
+      });
+    }
+    
+    // Success response
+    return res.status(200).json({
       success: true,
-      message: "Content submitted successfully! You can now generate a summary.",
-      textLength: content.length,
-      canSummarize: true,
-      documentId: id
+      keyPoints: keyPoints,
+      documentId: id,
+      documentTitle: document.title,
+      count: keyPoints.length
     });
-
+    
   } catch (error: any) {
-    console.error("Content submission error:", error);
-    res.status(500).json({ 
-      error: "Error submitting content",
-      details: error.message 
+    console.error('❌ KEY POINTS ERROR:', error);
+    return res.status(500).json({ 
+      error: "Error extracting key points",
+      details: error.message || "Unknown error",
+      type: error.name || 'Error'
     });
   }
 });
-
 // Get all documents
 router.get("/", requireAuth, async (req, res) => {
   try {
+
+    const userId = (req as any).userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
     const documents = await prisma.document.findMany({
+      where: {userId: userId},
       orderBy: { uploadedAt: "desc" },
     });
 
@@ -499,11 +758,18 @@ router.get("/", requireAuth, async (req, res) => {
 });
 
 // Get single document
-router.get("/:id", async (req, res) => {
+router.get("/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = (req as any).userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
     const document = await prisma.document.findUnique({
-      where: { id: id as string },
+      where: { id: id as string,
+        userId: userId
+       },
     });
 
     if (!document) {
@@ -518,11 +784,17 @@ router.get("/:id", async (req, res) => {
 });
 
 // Get document content
-router.get("/:id/content", async (req, res) => {
+router.get("/:id/content", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = (req as any).userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const document = await prisma.document.findUnique({
-      where: { id: id as string },
+      where: { id: id as string, userId: userId },
     });
 
     if (!document) {
@@ -542,11 +814,17 @@ router.get("/:id/content", async (req, res) => {
 });
 
 // Delete document
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = (req as any).userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     const document = await prisma.document.findUnique({
-      where: { id: id as string },
+      where: { id: id as string, userId: userId },
     });
     
     if (!document) {
