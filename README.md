@@ -44,8 +44,8 @@ Intellidoc is a full-stack AI-powered document assistant that allows users to up
 
 ## 1. Clone the Repository
 ```
-git clone <repository-url>
-cd intellidoc
+git clone https://github.com/Liciacodes/intellidoc-api
+cd intellidoc-api
 ```
 
 ## 2. Install Dependencies
