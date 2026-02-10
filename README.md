@@ -1,14 +1,12 @@
 # Intellidoc - AI-Powered Document Assistant
 
-A modern, responsive website for showcasing the Touki Grotesk font family by UDI Type Foundry.
-
 ## Project Overview
-Intellidoc is a full-stack AI-powered document assistant that allows users to upload, manage, and interact with their documents through chat, summarization, and semantic search features. The application supports multiple document formats (PDF, DOCX, TXT) and provides intelligent insights using AI.
+Intellidoc is a full-stack AI-powered document assistant that allows users to upload, manage, and interact with their documents through chat, summarization, and semantic search features. The application supports multiple document formats (PDF, DOCX, TXT) and provides intelligent insights using AI. 
 
 ## Features
 ### Authentication & User Management
 - User registration and login with JWT-based authentication
-- Password reset via email
+- Password reset via emailpus
 - Secure password change functionality
 - User-specific document isolation
 
