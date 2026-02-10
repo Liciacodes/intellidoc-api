@@ -11,7 +11,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://localhost:5000"],
+    origin: ["http://localhost:5173", "http://localhost:5000","http://localhost:5000","https://intellidocclient.netlify.app", "https://*.netlify.app",  "https://intellidoc-api.onrender.com"],
     methods: ["GET", "POST", "PUT", "DELETE", 'OPTIONS'],
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization"],
