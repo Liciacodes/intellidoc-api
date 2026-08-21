@@ -30,7 +30,7 @@ ${cleanedText}
 Summary:`
         }
       ],
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       temperature: 0.3,
       max_tokens: 1024,
     });
@@ -74,7 +74,7 @@ IMPORTANT RULES:
 ANSWER:`
           }
         ],
-        model: "llama-3.3-70b-versatile",
+        model: "openai/gpt-oss-120b",
         temperature: 0.3,
         max_tokens: 500,
       });
@@ -123,7 +123,7 @@ FORMAT REQUIREMENTS:
 KEY POINTS:`
           }
         ],
-        model: "llama-3.3-70b-versatile",
+        model: "openai/gpt-oss-120b",
         temperature: 0.3,
         max_tokens: 500,
       });

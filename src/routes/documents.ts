@@ -720,7 +720,7 @@ router.post("/:id/key-points", async (req, res) => {
     });
     
   } catch (error: any) {
-    console.error('❌ KEY POINTS ERROR:', error);
+    console.error('KEY POINTS ERROR:', error);
     return res.status(500).json({ 
       error: "Error extracting key points",
       details: error.message || "Unknown error",
