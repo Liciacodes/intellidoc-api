@@ -3,7 +3,7 @@ import multer from "multer";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import { geminiService } from "../services/geminiService";
-import { requireAuth } from "../middleware/Auth";
+import { requireAuth } from "../middleware/auth";
 
 const mammoth = require('mammoth');
 
@@ -287,71 +287,6 @@ router.post("/test-pdf-extraction", upload.single("file"), async (req, res) => {
 });
 
 
-// router.post("/:id/summarize", async (req, res) => {
-//   try {
-//     const { id } = req.params;
-
-//     console.log(`Summarization request for document: ${id}`);
-
-//     const document = await prisma.document.findUnique({
-//       where: { id: id as string },
-//     });
-
-//     if (!document) {
-//       return res.status(404).json({ error: "Document not found" });
-//     }
-
-//     console.log(` Document found:`, {
-//       title: document.title,
-//       fileType: document.fileType,
-//       textContentLength: document.textContent?.length || 0
-//     });
-
-//     // Get the text content
-//     const text = document.textContent || "";
-
-//     console.log(` Text to summarize: ${text.length} characters`);
-    
-//     if (text.length > 0) {
-//       console.log(`Text preview: ${text.substring(0, 300)}...`);
-//     }
-
-//     // Check if we have enough text to summarize
-//     if (!text || text.trim().length < 50) {
-//       console.error(`Insufficient text for summarization: ${text.length} characters`);
-      
-//       return res.status(400).json({ 
-//         error: "Cannot summarize: No text content available",
-//         details: {
-//           documentTitle: document.title,
-//           fileType: document.fileType,
-//           textLength: text.length,
-//           message: "The PDF appears to be scanned or text extraction failed. Try uploading as .docx instead."
-//         }
-//       });
-//     }
-
-//     console.log('Sufficient text found, generating summary...');
-
-//     const summary = await geminiService.summarizeText(text);
-
-//     console.log(' Summary generated successfully');
-
-//     res.json({
-//       summary,
-//       documentId: id,
-//       textLength: text.length,
-//       success: true
-//     });
-
-//   } catch (error: any) {
-//     console.error("Summarization error:", error);
-//     res.status(500).json({ 
-//       error: "Error generating summary",
-//       details: error.message 
-//     });
-//   }
-// });
 
 
 router.post("/:id/summarize", async (req, res) => {
@@ -454,141 +389,6 @@ router.post("/:id/summarize", async (req, res) => {
 });
 
 
-// Q&A with Document - Add this route AFTER the summarize route
-// router.post("/:id/ask", async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const { question } = req.body;
-
-//     console.log(`Q&A request for document ${id}:`, { question });
-
-//     // Validation
-//     if (!question || question.trim().length < 3) {
-//       return res.status(400).json({ 
-//         error: "Please ask a meaningful question (at least 3 characters)" 
-//       });
-//     }
-
-//     const document = await prisma.document.findUnique({
-//       where: { id: id as string },
-//     });
-
-//     if (!document) {
-//       return res.status(404).json({ error: "Document not found" });
-//     }
-
-//     const text = document.textContent || "";
-
-//     if (!text || text.length < 50) {
-//       return res.status(400).json({ 
-//         error: "This document doesn't have enough text to answer questions",
-//         textLength: text.length,
-//         solution: "Please upload a document with readable text content"
-//       });
-//     }
-
-//     console.log(`📄 Document found: ${text.length} characters`);
-
-//     // Call Gemini for answer
-//     const answer = await geminiService.askQuestion(text, question.trim());
-
-//     console.log(`Answer generated: ${answer.length} characters`);
-
-//     res.json({
-//       success: true,
-//       answer,
-//       question: question.trim(),
-//       documentId: id,
-//       documentTitle: document.title,
-//       textLength: text.length
-//     });
-
-//   } catch (error: any) {
-//     console.error("Q&A error:", error);
-//     res.status(500).json({ 
-//       error: "Failed to answer question",
-//       details: error.message,
-//       help: "Check your Gemini API key and internet connection"
-//     });
-//   }
-// });
-
-// router.post("/:id/key-points", async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const document = await prisma.document.findUnique({ where: { id } });
-    
-//     if (!document) return res.status(404).json({ error: "Document not found" });
-    
-//     const text = document.textContent || "";
-//     if (!text || text.length < 50) {
-//       return res.status(400).json({ error: "Not enough text content" });
-//     }
-    
-//     const keyPoints = await geminiService.extractKeyPoints(text);
-    
-//     res.json({
-//       success: true,
-//       keyPoints,
-//       documentId: id,
-//       count: keyPoints.length
-//     });
-//   } catch (error: any) {
-//     res.status(500).json({ error: error.message });
-//   }
-// });
-
-// // Manual content submission route
-// router.post("/:id/manual-content", async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const { content } = req.body;
-
-//     if (!content || content.trim().length < 10) {
-//       return res.status(400).json({ 
-//         error: "Please provide meaningful text content (at least 10 characters)" 
-//       });
-//     }
-
-//     const document = await prisma.document.findUnique({
-//       where: { id: id as string },
-//     });
-
-//     if (!document) {
-//       return res.status(404).json({ error: "Document not found" });
-//     }
-
-//     // Update the document with manually provided content
-//     await prisma.document.update({
-//       where: { id: id as string },
-//       data: { textContent: content.trim() }
-//     });
-
-//     console.log(`📝 Manual content submitted for document ${id}, length: ${content.length}`);
-
-//     res.json({
-//       success: true,
-//       message: "Content submitted successfully! You can now generate a summary.",
-//       textLength: content.length,
-//       canSummarize: true,
-//       documentId: id
-//     });
-
-//   } catch (error: any) {
-//     console.error("Content submission error:", error);
-//     res.status(500).json({ 
-//       error: "Error submitting content",
-//       details: error.message 
-//     });
-//   }
-// });
-
-
-
-// FIXED Q&A AND KEY POINTS ROUTES
-// Replace these routes in your documents.ts file
-
-// Q&A Route - FIXED VERSION
 router.post("/:id/ask", async (req, res) => {
   try {
     const { id } = req.params;
@@ -663,7 +463,7 @@ router.post("/:id/ask", async (req, res) => {
   }
 });
 
-// KEY POINTS Route - FIXED VERSION
+
 router.post("/:id/key-points", async (req, res) => {
   try {
     const { id } = req.params;

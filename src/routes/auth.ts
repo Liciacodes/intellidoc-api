@@ -5,7 +5,7 @@ import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { body, validationResult } from "express-validator";
 import { PrismaClient } from "@prisma/client";
-import { requireAuth } from "../middleware/Auth";
+import { requireAuth } from "../middleware/auth"
 
 const router = Router();
 

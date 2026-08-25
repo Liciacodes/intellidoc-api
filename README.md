@@ -26,7 +26,7 @@ Intellidoc is a full-stack AI-powered document assistant that allows users to up
 ## Tech Stack
 - Node.js with Express.js - Server framework
 - TypeScript - Type safety and better developer experience
-- mPrisma - ORM for database operations
+- Prisma - ORM for database operations
 - PostgreSQL - Primary database (via Supabase)
 - Supabase - File storage and database hosting
 - Groq AI API - AI/LLM integration (using Llama 3.3-70B model)
