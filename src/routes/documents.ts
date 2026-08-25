@@ -3,7 +3,7 @@ import multer from "multer";
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import { geminiService } from "../services/geminiService";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth } from "../middleware/auth"
 
 const mammoth = require('mammoth');
 
