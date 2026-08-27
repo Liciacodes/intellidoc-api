@@ -7,9 +7,8 @@ import { body, validationResult } from "express-validator";
 import { PrismaClient } from "@prisma/client";
 import { requireAuth } from "../middleware/auth";
 
-const router = Router();
-
-const prisma = new PrismaClient();
+export const createAuthRouter = (prisma: PrismaClient) => {
+  const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -319,5 +318,5 @@ router.post(
     return res.json({ message: "Password reset successful" });
   }
 );
-
-export default router;
+return router;
+}

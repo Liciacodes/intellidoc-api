@@ -1,18 +1,18 @@
 import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
-import authRoutes from "./routes/auth";
+import {createAuthRouter} from "./routes/auth";
 import documentRoutes from "./routes/documents";
+import { PrismaClient } from "@prisma/client";
 
 dotenv.config();
-
-const app = express();
+export const createApp = (prisma: PrismaClient) => {
+  const app = express();
 
 app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "http://localhost:5000",
       "http://localhost:5000",
       "https://intellidocclient.netlify.app",
       "https://*.netlify.app",
@@ -33,7 +33,12 @@ app.get("/api-health", (req, res) => {
 });
 
 // Use routers
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", createAuthRouter(prisma));
 app.use("/api/documents", documentRoutes);
 
+return app;
+}
+
+const prisma = new PrismaClient();
+const app = createApp(prisma);
 export default app;
