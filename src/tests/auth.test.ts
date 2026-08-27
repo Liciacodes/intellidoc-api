@@ -3,6 +3,7 @@ import request from "supertest";
 import { createApp } from "../app";
 import { prismaMock } from "./mocks/prisma";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
 const app = createApp(prismaMock as any);
 
@@ -172,4 +173,32 @@ describe("POST /api/auth/login", () => {
         name: 'Felicia'
     });
 })
+})
+
+
+describe("POST /api/auth/change-password", () => {
+  it("should reject an unauthenticated user", async () => {
+        const response = await request(app)
+        .post("/api/auth/change-password")
+        .send({
+            currentPassword: "Password123",
+            newPassword: "NewPassword123"
+        });
+    
+        expect(response.status).toBe(401);
+    })
+
+    it("should reject a user with a weak new password", async () => {
+        const token = jwt.sign({ userId: "user-123" }, process.env.JWT_SECRET || "test-secret");
+
+        const response = await request(app)
+        .post('/api/auth/change-password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+            currentPassword: "Password123",
+            newPassword: "weak"
+        });
+        expect(response.status).toBe(400);
+        expect(response.body.error).toBe("Password must be at least 8 characters long");
+    })
 })
